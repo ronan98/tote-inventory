@@ -49,7 +49,7 @@ The clean-install workflow has been tested on Debian Linux with x86-64 hardware.
 
    The first build downloads dependencies and may take several minutes. Open your configured address from a phone on the same network. Allow the chosen port through the server's local firewall if needed.
 
-Add a tote, upload a top-down photo, and add items. Open **Labels** to print selected totes, or **More → Print all tote labels**. For Avery sheets, use **Open print PDF**, then print on US Letter paper at Actual size / 100%, one page per sheet. Test alignment on plain paper first.
+Add a tote, upload a top-down photo, and add items. Open **Labels** or **More → Print tote labels**, then check the totes you want to print. Use **Select all** or **Clear selection** for a quick reset; the preview and print PDF include only checked totes. For Avery sheets, use **Open print PDF**, then print on US Letter paper at Actual size / 100%, one page per sheet. Test alignment on plain paper first.
 
 ## Optional local AI
 

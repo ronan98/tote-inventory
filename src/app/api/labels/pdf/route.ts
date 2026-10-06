@@ -10,7 +10,7 @@ export function GET(request: Request) {
   return endpoint(async () => {
     const query = new URL(request.url).searchParams;
     const { totes, format, start } = getLabelSelection({
-      ids: query.get("ids") || undefined, format: query.get("format") || undefined, start: query.get("start") || undefined,
+      ids: query.get("ids") ?? undefined, format: query.get("format") || undefined, start: query.get("start") || undefined,
     });
     if (!totes.length) throw new DomainError(400, "Choose at least one existing tote before printing labels.");
     const pdf = await renderLabelPdf(totes, appOrigin(), format, start);
