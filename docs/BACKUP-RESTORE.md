@@ -69,7 +69,7 @@ Use only a backup you trust. Check that `restore-check/inventory.sqlite`, `resto
 
 ### 2. Verify the extracted snapshot
 
-This helper mounts the extracted files read-only. It checks the database, manifest, and referenced photo files. For scheduled archives it also checks the recorded database hash and photo-file totals.
+This helper mounts the extracted files read-only. It checks the database, manifest, and referenced photo files. For scheduled archives it also checks the recorded database hash and photo-file totals. Database checks use a temporary copy so SQLite can create any required journal sidecars without changing the extracted backup.
 
 ```sh
 docker run --rm -i --user 0:0 --entrypoint node --mount type=bind,src="$(pwd)/restore-check",dst=/restore,readonly home-inventory:local - <<'NODE'
@@ -88,27 +88,35 @@ if (scheduled) {
   const hash = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   if (hash !== manifest.database.sha256) throw new Error('Database hash mismatch.');
 }
-const db = new Database(file, { readonly: true, fileMustExist: true });
-if (db.pragma('integrity_check', { simple: true }) !== 'ok' || db.pragma('foreign_key_check').length) throw new Error('Database integrity check failed.');
-const schema = db.pragma('user_version', { simple: true });
-if (schema !== (scheduled ? manifest.database.schemaVersion : manifest.schemaVersion)) throw new Error('Schema differs from manifest.');
-const ids = db.prepare('SELECT id FROM photos').all().map(row => row.id);
-let count = 0, bytes = 0;
-for (const id of ids) {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Invalid photo identifier.');
-  const directory = path.join(base, 'photos', id);
-  if (!fs.lstatSync(directory).isDirectory()) throw new Error('Photo directory missing or unsafe.');
-  const names = fs.readdirSync(directory);
-  for (const required of ['original', 'full.jpg', 'thumb.webp']) if (!names.includes(required)) throw new Error('Incomplete photo: ' + id);
-  for (const name of names) {
-    const metadata = fs.lstatSync(path.join(directory, name));
-    if (!metadata.isFile()) throw new Error('Photo is not a regular file.');
-    count++; bytes += metadata.size;
+const temporary = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'inventory-verify-'));
+let db;
+try {
+  const verificationFile = path.join(temporary, 'inventory.sqlite');
+  fs.copyFileSync(file, verificationFile);
+  db = new Database(verificationFile, { readonly: true, fileMustExist: true });
+  if (db.pragma('integrity_check', { simple: true }) !== 'ok' || db.pragma('foreign_key_check').length) throw new Error('Database integrity check failed.');
+  const schema = db.pragma('user_version', { simple: true });
+  if (schema !== (scheduled ? manifest.database.schemaVersion : manifest.schemaVersion)) throw new Error('Schema differs from manifest.');
+  const ids = db.prepare('SELECT id FROM photos').all().map(row => row.id);
+  let count = 0, bytes = 0;
+  for (const id of ids) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Invalid photo identifier.');
+    const directory = path.join(base, 'photos', id);
+    if (!fs.lstatSync(directory).isDirectory()) throw new Error('Photo directory missing or unsafe.');
+    const names = fs.readdirSync(directory);
+    for (const required of ['original', 'full.jpg', 'thumb.webp']) if (!names.includes(required)) throw new Error('Incomplete photo: ' + id);
+    for (const name of names) {
+      const metadata = fs.lstatSync(path.join(directory, name));
+      if (!metadata.isFile()) throw new Error('Photo is not a regular file.');
+      count++; bytes += metadata.size;
+    }
   }
+  if (scheduled && (count !== manifest.photos.count || bytes !== manifest.photos.bytes)) throw new Error('Photo totals differ from manifest.');
+  console.log('Verified schema', schema, '-', ids.length, 'photos,', count, 'files.');
+} finally {
+  db?.close();
+  fs.rmSync(temporary, { recursive: true, force: true });
 }
-if (scheduled && (count !== manifest.photos.count || bytes !== manifest.photos.bytes)) throw new Error('Photo totals differ from manifest.');
-console.log('Verified schema', schema, '-', ids.length, 'photos,', count, 'files.');
-db.close();
 NODE
 ```
 
