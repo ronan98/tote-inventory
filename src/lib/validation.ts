@@ -1,0 +1,10 @@
+import { z } from "zod";
+const name = z.string().trim().min(1, "Enter an item name.").max(200, "Use a shorter item name.");
+const notes = z.string().trim().max(1000, "Notes must be 1,000 characters or fewer.");
+const quantity = z.number().int("Use a whole-number quantity.").min(1).max(100000);
+export const toteInput = z.object({ name: z.string().trim().min(1, "Name your tote.").max(120), notes: notes.optional() }).strict();
+export const itemBatchInput = z.object({ items: z.array(z.object({ name, notes: notes.optional(), quantity })).min(1).max(50) }).strict();
+export const itemEditInput = z.object({ toteId: z.string().uuid(), name: name.optional(), notes: notes.optional(), quantity: z.number().int().min(0).max(100000).optional() }).strict();
+export const takeInput = z.object({ toteId: z.string().uuid(), quantity }).strict();
+export const moveInput = z.object({ sourceToteId: z.string().uuid(), destinationToteId: z.string().uuid(), quantity }).strict();
+export const returnInput = z.object({ quantity, destinationToteId: z.string().uuid().optional() }).strict();

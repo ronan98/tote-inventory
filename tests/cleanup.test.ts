@@ -1,0 +1,175 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import Database from "better-sqlite3";
+import sharp from "sharp";
+import { closeDatabase, getDatabase } from "../src/lib/db";
+import { addItems, createTote, deleteItem, deleteTote, DomainError, getExportSnapshot, getPhoto, getTote, listActivity, listRemovals, listTotes, moveItem, recordPhoto, removeUnreferencedPhotoFiles, returnItem, searchInventory, takeItem } from "../src/lib/inventory";
+import { claimAIRun, completeAIRun, createAIRun, failAIRun } from "../src/lib/ai";
+import { uploadPhoto } from "../src/lib/photos";
+
+test("inventory cleanup preserves unassigned quantities and removes deleted records atomically", async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), "inventory-cleanup-"));
+  const previousDirectory = process.env.INVENTORY_DATA_DIR, previousAI = process.env.AI_URL;
+  process.env.INVENTORY_DATA_DIR = directory;
+  process.env.AI_URL = "http://127.0.0.1:11434";
+  const rejects = (status: number, action: () => unknown) => assert.throws(action, error => error instanceof DomainError && error.status === status);
+  const photo = async (toteId: string) => {
+    const id = randomUUID();
+    await mkdir(path.join(directory, "photos", id));
+    await writeFile(path.join(directory, "photos", id, "full.jpg"), "test-photo");
+    return recordPhoto(toteId, { id, originalName: "contents.jpg", mimeType: "image/jpeg" });
+  };
+  try {
+    await t.test("deleting a populated tote retains stored and taken-out stock, shared items, and original labels", async () => {
+      const source = createTote({ name: "Old tools" }), destination = createTote({ name: "Workshop" }), unrelated = createTote({ name: "Other inventory" });
+      const added = addItems(source.id, { items: [{ name: "Cord", notes: "Orange cable", quantity: 7 }] });
+      const item = added.items[0];
+      takeItem(item.id, { toteId: source.id, quantity: 2 });
+      moveItem(item.id, { sourceToteId: source.id, destinationToteId: destination.id, quantity: 2 });
+      const first = await photo(source.id), latest = await photo(source.id);
+      const run = createAIRun(source.id, { photoId: latest.tote.photo!.id, contentsUpdatedAt: latest.tote.contentsUpdatedAt }).state.run!;
+      assert.ok(claimAIRun(run.id));
+      const unaffected = addItems(unrelated.id, { items: [{ name: "Pencil", quantity: 2 }] });
+      const destinationBefore = getTote(destination.id);
+      assert.equal(listRemovals()[0].toteCode, source.code);
+      assert.deepEqual(deleteTote(source.id), { deleted: true });
+      rejects(404, () => getTote(source.id));
+      rejects(404, () => getPhoto(first.tote.photo!.id));
+      rejects(404, () => getPhoto(latest.tote.photo!.id));
+      assert.deepEqual(getTote(destination.id).items, destinationBefore.items);
+      assert.equal(getTote(destination.id).tote.contentsUpdatedAt, destinationBefore.tote.contentsUpdatedAt);
+      assert.deepEqual(getTote(unrelated.id), unaffected);
+      const outstanding = listRemovals().filter(row => row.itemId === item.id);
+      assert.equal(outstanding.length, 2);
+      assert.equal(outstanding.reduce((sum, row) => sum + row.outstandingQuantity, 0), 5);
+      assert.ok(outstanding.every(row => row.toteId === null && row.toteCode === source.code && row.toteName === source.name && row.itemNotes === "Orange cable"));
+      assert.equal(listTotes().reduce((sum, tote) => sum + tote.totalQuantity, 0) + listRemovals().reduce((sum, row) => sum + row.outstandingQuantity, 0), 9);
+      assert.ok(listActivity().some(entry => entry.type === "tote_deleted" && entry.description.includes(source.name)));
+      assert.equal((getDatabase().prepare("SELECT COUNT(*) AS count FROM ai_suggestion_runs WHERE id=?").get(run.id) as { count: number }).count, 0);
+      completeAIRun(run.id, { items: [{ name: "Late cord", quantity: 1, note: "" }] });
+      failAIRun(run.id, "Late failure");
+      assert.equal(searchInventory("Late cord").results.length, 0);
+      assert.deepEqual(getDatabase().pragma("foreign_key_check"), []);
+      assert.deepEqual(await readdir(path.join(directory, "photos")), []);
+      const beforeReturn = getExportSnapshot();
+      rejects(400, () => returnItem(outstanding[0].id, { quantity: 1 }));
+      assert.deepEqual(getExportSnapshot().removals, beforeReturn.removals);
+      const returned = returnItem(outstanding[0].id, { quantity: 1, destinationToteId: destination.id });
+      assert.equal(returned.tote.id, destination.id);
+      assert.equal(returned.items[0].quantity, 3);
+      assert.ok(returned.history.some(entry => entry.description.includes(`from ${source.code} (${source.name})`)));
+      assert.equal(listRemovals().find(row => row.id === outstanding[0].id)?.outstandingQuantity, outstanding[0].outstandingQuantity - 1);
+    });
+    await t.test("permanent item deletion removes every placement, removal, linked activity, and FTS entry", () => {
+      const first = createTote({ name: "First shared tote" }), second = createTote({ name: "Second shared tote" }), unaffected = createTote({ name: "Untouched" });
+      const added = addItems(first.id, { items: [{ name: "Delete unique wrench", quantity: 6 }, { name: "Keep hammer", quantity: 1 }] });
+      const item = added.items.find(row => row.name === "Delete unique wrench")!;
+      moveItem(item.id, { sourceToteId: first.id, destinationToteId: second.id, quantity: 2 });
+      takeItem(item.id, { toteId: second.id, quantity: 1 });
+      const firstBefore = getTote(first.id), secondBefore = getTote(second.id), unaffectedBefore = getTote(unaffected.id);
+      getDatabase().exec("CREATE TEMP TRIGGER reject_cleanup_item BEFORE DELETE ON items WHEN OLD.name='Delete unique wrench' BEGIN SELECT RAISE(ABORT,'test cleanup rejected'); END");
+      assert.throws(() => deleteItem(item.id), /test cleanup rejected/);
+      assert.deepEqual(getTote(first.id), firstBefore);
+      assert.deepEqual(getTote(second.id), secondBefore);
+      getDatabase().exec("DROP TRIGGER reject_cleanup_item");
+      assert.deepEqual(deleteItem(item.id), { deleted: true });
+      for (const table of ["tote_contents", "removals", "activities"]) assert.equal((getDatabase().prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE item_id=?`).get(item.id) as { count: number }).count, 0);
+      assert.equal(getDatabase().prepare("SELECT id FROM items WHERE id=?").get(item.id), undefined);
+      assert.equal(searchInventory("unique wrench").results.length, 0);
+      assert.equal((getDatabase().prepare("SELECT COUNT(*) AS count FROM item_search WHERE item_search MATCH 'unique'").get() as { count: number }).count, 0);
+      assert.ok(getTote(first.id).tote.contentsUpdatedAt > firstBefore.tote.contentsUpdatedAt);
+      assert.ok(getTote(second.id).tote.contentsUpdatedAt > secondBefore.tote.contentsUpdatedAt);
+      assert.deepEqual(getTote(unaffected.id), unaffectedBefore);
+      assert.equal(getTote(first.id).items[0].name, "Keep hammer");
+      rejects(404, () => deleteItem(item.id));
+      assert.deepEqual(getDatabase().pragma("foreign_key_check"), []);
+    });
+    await t.test("a failed tote delete restores metadata and leaves its files in place", async () => {
+      const tote = createTote({ name: "Atomic delete" });
+      addItems(tote.id, { items: [{ name: "Atomic stock", quantity: 3 }] });
+      const before = await photo(tote.id), id = before.tote.photo!.id;
+      const removalsBefore = listRemovals();
+      getDatabase().exec("CREATE TEMP TRIGGER reject_cleanup_tote BEFORE DELETE ON totes WHEN OLD.name='Atomic delete' BEGIN SELECT RAISE(ABORT,'test tote rejected'); END");
+      assert.throws(() => deleteTote(tote.id), /test tote rejected/);
+      assert.deepEqual(getTote(tote.id), before);
+      assert.deepEqual(listRemovals(), removalsBefore);
+      assert.ok((await stat(path.join(directory, "photos", id, "full.jpg"))).isFile());
+      getDatabase().exec("DROP TRIGGER reject_cleanup_tote");
+      deleteTote(tote.id);
+      await assert.rejects(stat(path.join(directory, "photos", id)), { code: "ENOENT" });
+      assert.throws(() => removeUnreferencedPhotoFiles(["../outside"]), /invalid photo directory/);
+    });
+    await t.test("an upload whose tote disappears during processing cannot recreate records or orphan files", async () => {
+      const tote = createTote({ name: "Deleted while uploading" });
+      const bytes = await sharp({ create: { width: 20, height: 20, channels: 3, background: "white" } }).jpeg().toBuffer();
+      const form = new FormData();
+      form.set("file", new File([new Uint8Array(bytes)], "contents.jpg", { type: "image/jpeg" }));
+      const serialized = new Request("https://inventory.home.arpa", { method: "POST", body: form });
+      const body = new Uint8Array(await serialized.arrayBuffer());
+      let streamController: ReadableStreamDefaultController<Uint8Array>;
+      const stream = new ReadableStream<Uint8Array>({ start(controller) { streamController = controller; } });
+      const request = new Request("https://inventory.home.arpa/api/photos", { method: "POST", headers: { origin: process.env.APP_ORIGIN || "https://inventory.home.arpa", "content-type": serialized.headers.get("content-type")! }, body: stream, duplex: "half" } as RequestInit);
+      const pending = uploadPhoto(tote.id, request);
+      deleteTote(tote.id);
+      streamController!.enqueue(body);
+      streamController!.close();
+      await assert.rejects(pending, error => error instanceof DomainError && error.status === 404);
+      assert.equal(getDatabase().prepare("SELECT id FROM photos WHERE tote_id=?").get(tote.id), undefined);
+      assert.deepEqual(await readdir(path.join(directory, "photos")), []);
+    });
+    await t.test("version 3 migration preserves records, source snapshots, queue state, FTS, and QR identity", async () => {
+      const tote = createTote({ name: "Legacy v3" });
+      const added = addItems(tote.id, { items: [{ name: "Legacy v3 item", quantity: 4 }] });
+      takeItem(added.items[0].id, { toteId: tote.id, quantity: 1 });
+      const detail = await photo(tote.id);
+      const run = createAIRun(tote.id, { photoId: detail.tote.photo!.id, contentsUpdatedAt: detail.tote.contentsUpdatedAt }).state.run!;
+      // Use an isolated real v3 database: nullable v4 removals elsewhere in this
+      // test cannot legally be inserted into the old NOT NULL layout.
+      const legacyDirectory = await mkdtemp(path.join(tmpdir(), "inventory-v3-migration-"));
+      closeDatabase();
+      const source = new Database(path.join(directory, "inventory.sqlite"));
+      await source.backup(path.join(legacyDirectory, "inventory.sqlite"));
+      source.close();
+      const legacy = new Database(path.join(legacyDirectory, "inventory.sqlite"));
+      legacy.pragma("foreign_keys = OFF");
+      legacy.exec(`
+        DELETE FROM removals WHERE original_tote_id IS NULL;
+        DELETE FROM activities WHERE tote_id IS NULL;
+        CREATE TABLE old_removals (id TEXT PRIMARY KEY NOT NULL,item_id TEXT NOT NULL REFERENCES items(id),original_tote_id TEXT NOT NULL REFERENCES totes(id),quantity INTEGER NOT NULL CHECK(quantity>0),outstanding_quantity INTEGER NOT NULL CHECK(outstanding_quantity>=0 AND outstanding_quantity<=quantity),created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+        INSERT INTO old_removals SELECT id,item_id,original_tote_id,quantity,outstanding_quantity,created_at,updated_at FROM removals ORDER BY rowid;
+        DROP TABLE removals; ALTER TABLE old_removals RENAME TO removals;
+        CREATE INDEX removals_tote_idx ON removals(original_tote_id); CREATE INDEX removals_item_idx ON removals(item_id);
+        CREATE TABLE old_activities (id TEXT PRIMARY KEY NOT NULL,type TEXT NOT NULL,tote_id TEXT NOT NULL REFERENCES totes(id),other_tote_id TEXT REFERENCES totes(id),item_id TEXT REFERENCES items(id),item_name TEXT,quantity INTEGER,details TEXT NOT NULL,created_at TEXT NOT NULL);
+        INSERT INTO old_activities SELECT * FROM activities ORDER BY rowid;
+        DROP TABLE activities; ALTER TABLE old_activities RENAME TO activities;
+        CREATE INDEX activities_tote_idx ON activities(tote_id,created_at);
+        ALTER TABLE ai_suggestion_runs DROP COLUMN dismissed_at;
+        ALTER TABLE ai_suggestion_runs DROP COLUMN dismissed_ids_json;
+      `);
+      legacy.pragma("user_version = 3"); legacy.close();
+      process.env.INVENTORY_DATA_DIR = legacyDirectory;
+      try {
+        assert.deepEqual(getTote(tote.id), detail);
+        assert.equal(getDatabase().pragma("user_version", { simple: true }), 4);
+        assert.deepEqual(getDatabase().pragma("foreign_key_check"), []);
+        assert.equal(searchInventory("Legacy v3 item").results[0].toteId, tote.id);
+        const migrated = getDatabase().prepare("SELECT status,dismissed_at,dismissed_ids_json FROM ai_suggestion_runs WHERE id=?").get(run.id);
+        assert.deepEqual(migrated, { status: "queued", dismissed_at: null, dismissed_ids_json: "[]" });
+        const snapshot = getExportSnapshot();
+        assert.equal(snapshot.formatVersion, 3);
+        const removal = snapshot.removals.find(row => (row as { originalToteId: string }).originalToteId === tote.id) as { originalToteCode: string; originalToteName: string };
+        assert.equal(removal.originalToteCode, tote.code); assert.equal(removal.originalToteName, tote.name);
+        assert.equal(createTote({ name: "After v3 migration" }).code, `T${String(Number(tote.code.slice(1)) + 1).padStart(3, "0")}`);
+      } finally { closeDatabase(); process.env.INVENTORY_DATA_DIR = directory; await rm(legacyDirectory, { recursive: true, force: true }); }
+    });
+  } finally {
+    closeDatabase();
+    if (previousDirectory === undefined) delete process.env.INVENTORY_DATA_DIR; else process.env.INVENTORY_DATA_DIR = previousDirectory;
+    if (previousAI === undefined) delete process.env.AI_URL; else process.env.AI_URL = previousAI;
+    await rm(directory, { recursive: true, force: true });
+  }
+});

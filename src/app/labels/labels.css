@@ -1,0 +1,44 @@
+@font-face{font-family:"Label Sans";src:url("/fonts/NotoSans-Regular.ttf") format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:"Label Sans";src:url("/fonts/NotoSans-Bold.ttf") format("truetype");font-weight:700;font-display:swap}
+.labels-page{max-width:940px;margin:0 auto;padding:24px;color:#15221a}
+.label-toolbar{display:flex;flex-direction:column;gap:20px;margin-bottom:28px;padding:22px;background:white;border:1px solid #dfe5df;border-radius:16px}
+.label-toolbar-heading{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.label-toolbar-heading a{color:#28634c;text-decoration:underline;text-underline-offset:3px}
+.label-toolbar-heading p{flex:1;min-width:170px;margin:0;color:#526158;font-size:14px}
+.label-toolbar button{border:0;border-radius:10px;background:#28634c;color:white;padding:14px 20px;font:inherit;font-weight:650;cursor:pointer}
+.label-toolbar button:disabled{opacity:.5;cursor:not-allowed}
+.label-toolbar .label-web-print{background:#edf2ee;color:#28634c;border:1px solid #dfe5df}
+.label-print-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.label-print-controls .field-label{color:#15221a}.label-print-controls .field{color:#15221a;background:white;border-color:#dfe5df}
+.label-print-controls .field-helper{color:#526158}
+.label-print-help{font-size:13px;line-height:1.65;color:#526158;margin:0}
+.label-sheet-group{max-width:8.5in;margin:0 auto 30px}.sheet-caption{font-size:12px;color:#526158;margin:0 0 12px}
+/* The responsive preview has the same proportions as the printed Letter sheet.
+   Its content width is 8.1875 inches after the two 5/32-inch side margins. */
+.label-sheet{container-type:inline-size;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr));column-gap:2.290076336%;row-gap:0;width:100%;aspect-ratio:17/22;padding:5.882352941% 1.838235294%;background:white;outline:1px solid #dfe5df;box-shadow:0 8px 28px #253a2510}
+.tote-label{--label-inch:calc(100cqw / 8.1875);position:relative;background:white;color:#000;font-family:"Label Sans",sans-serif;font-weight:400;outline:1px dashed #a7b1a9;outline-offset:-1px;break-inside:avoid;min-height:0;min-width:0;overflow:hidden;display:block;padding:calc(var(--label-inch) * .25)}
+.label-text{position:absolute;left:calc(var(--label-inch) * .25);top:50%;transform:translateY(-50%);width:calc(var(--label-inch) * 1.68);max-height:calc(100% - var(--label-inch) * .9);overflow:hidden}.label-brand{display:block;font-size:calc(var(--label-inch) / 9);letter-spacing:.08em;line-height:1.4}
+.tote-label .label-name{font-size:calc(var(--label-inch) * 5 / 18);font-weight:700;line-height:1.15;letter-spacing:0;margin:calc(var(--label-inch) / 10) 0 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow:hidden}
+.tote-label .label-name-medium{font-size:calc(var(--label-inch) / 4)}.tote-label .label-name-small{font-size:calc(var(--label-inch) * 7 / 36)}
+.label-code{font-size:calc(var(--label-inch) * 5 / 36);line-height:1.3;font-weight:700;letter-spacing:.06em;color:#444;margin:calc(var(--label-inch) * .12) 0 0}
+.tote-label img{position:absolute;right:calc(var(--label-inch) * .25);top:50%;transform:translateY(-50%);width:calc(var(--label-inch) * 1.7);height:calc(var(--label-inch) * 1.7);max-width:none;display:block;object-fit:contain}
+.label-address{position:absolute;left:calc(var(--label-inch) * .25);right:calc(var(--label-inch) * .25);bottom:calc(var(--label-inch) * .25);text-align:center;font-size:calc(var(--label-inch) / 9);line-height:1.3;letter-spacing:0;overflow-wrap:anywhere}
+.label-empty-slot{display:flex;align-items:center;justify-content:center;background:#f7f9f6;color:#79847c;font-size:calc(var(--label-inch) / 7)}
+.label-empty{padding:40px 0}
+@media(max-width:700px){.labels-page{padding:20px 14px}.label-toolbar{padding:18px;gap:17px}.label-toolbar-heading{gap:12px}.label-toolbar-heading p{flex-basis:100%}.label-toolbar-heading button{width:100%}.label-print-controls{grid-template-columns:1fr;gap:14px}}
+@media print{
+  @page{size:8.5in 11in;margin:0}
+  html,body{margin:0!important;padding:0!important;background:white!important;color:black!important}
+  .labels-page{padding:0;margin:0;max-width:none;color:black}
+  .label-toolbar,.label-empty,.sheet-caption{display:none!important}
+  .label-sheet-group{margin:0;padding:0;max-width:none;break-after:page;break-inside:avoid}
+  .label-sheet-group:last-child{break-after:auto}
+  .label-sheet{display:grid;grid-template-columns:4in 4in;grid-template-rows:repeat(3,calc(10in / 3));column-gap:.1875in;row-gap:0;width:8.5in;height:11in;aspect-ratio:auto;margin:0;padding:.5in .15625in;outline:0;border:0;border-radius:0;background:white;box-shadow:none;box-sizing:border-box;break-inside:avoid}
+  .tote-label{--label-inch:1in;width:4in;height:calc(10in / 3);min-height:0;max-width:none;aspect-ratio:auto;padding:.25in;outline:0;border:0;border-radius:0;box-sizing:border-box;overflow:hidden;break-inside:avoid;background:white;color:black}
+  .tote-label img{width:1.7in;height:1.7in;max-width:none}
+  .tote-label .label-name{font-size:20pt;margin:7.2pt 0 0}.tote-label .label-name-medium{font-size:18pt}.tote-label .label-name-small{font-size:14pt}
+  .label-code{font-size:10pt;margin:8.64pt 0 0}
+  .label-brand{font-size:8pt;letter-spacing:.08em}.label-address{font-size:8pt;line-height:1.3;letter-spacing:0}
+  .label-empty-slot{background:white;border:0}.label-empty-slot span{display:none}
+  .labels-page[data-label-format="plain"] .tote-label:not(.label-empty-slot){outline:1px dashed #bbb;outline-offset:-1px}
+}

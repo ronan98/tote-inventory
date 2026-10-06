@@ -1,0 +1,27 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check default and AI Compose configurations
+        env:
+          APP_ORIGIN: http://127.0.0.1:8080
+        run: |
+          docker compose config --quiet
+          docker compose --profile ai config --quiet
+      - name: Build, test, and check types in the production toolchain
+        run: docker build --target test --tag home-inventory:test .
+      - name: Build the runtime image
+        run: docker build --target runner --tag home-inventory:ci .

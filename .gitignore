@@ -1,0 +1,40 @@
+# Local configuration, credentials, and this household's deployment history.
+.env
+.env.*
+!.env.example
+/DEPLOYMENT.md
+/deploy/network/
+/scripts/deploy.ps1
+/compose.override.yaml
+/compose.override.yml
+*.key
+*.pem
+*.crt
+*.cer
+
+# Inventory, photos, models, generated labels, and private QA fixtures.
+/data/
+/backups/
+/models/
+/output/
+/.qa/
+/backup-export/
+/restore-check/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.tar
+*.tar.gz
+*.zip
+
+# Build products and local tooling.
+node_modules/
+.next/
+*.tsbuildinfo
+*.log
+coverage/
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db
