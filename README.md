@@ -1,4 +1,4 @@
-# Home Inventory
+# Tote Inventory
 
 A self-hosted inventory for household storage totes. Scan a tote's QR label to see its contents photo, keep a searchable item list, and track things taken out so they are easy to put back.
 
@@ -16,7 +16,14 @@ Install [Docker Engine with the Compose plugin](https://docs.docker.com/engine/i
 
 The clean-install workflow has been tested on Debian Linux with x86-64 hardware. Other host architectures have not been verified. Leave memory available for the initial source build as well as the running services; the app's default runtime limit is 1 GB.
 
-1. Download this repository using **Code → Download ZIP** and extract it, or clone it. Open a terminal in the extracted project directory.
+1. Download this repository using **Code → Download ZIP** and extract it, or clone it:
+
+   ```sh
+   git clone https://github.com/ronan98/tote-inventory.git
+   cd tote-inventory
+   ```
+
+   For a ZIP download, open a terminal in the extracted project directory.
 2. Copy the example configuration:
 
    ```sh
@@ -105,6 +112,8 @@ If a QR opens the wrong address, check `APP_ORIGIN`, restart with `docker compos
 
 The app uses Next.js, React, TypeScript, SQLite, and Sharp. Docker handles the production build and native dependencies. For local development, use the Node.js version in `Dockerfile` and run `npm ci`, `npm run dev`, `npm test`, and `npm run typecheck`. Application data defaults to `./data`; use a separate `INVENTORY_DATA_DIR` for test/development data.
 
-## Third-party components
+## License and third-party components
+
+An application license has not been selected yet.
 
 Dependencies and bundled fonts retain their own licenses. See [Third-party notices](THIRD-PARTY-NOTICES.md); the full Noto font license is included with the fonts. Optional AI model weights are downloaded separately.
