@@ -2,6 +2,7 @@
   "name": "home-inventory",
   "version": "1.4.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build && npm run build:worker",

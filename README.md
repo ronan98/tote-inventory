@@ -114,6 +114,6 @@ The app uses Next.js, React, TypeScript, SQLite, and Sharp. Docker handles the p
 
 ## License and third-party components
 
-An application license has not been selected yet.
+The application code is licensed under the [MIT License](LICENSE).
 
 Dependencies and bundled fonts retain their own licenses. See [Third-party notices](THIRD-PARTY-NOTICES.md); the full Noto font license is included with the fonts. Optional AI model weights are downloaded separately.
